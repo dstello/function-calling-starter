@@ -4,6 +4,7 @@ import chainlit as cl
 from movie_functions import get_now_playing_movies, get_showtimes
 import litellm
 from prompts import SYSTEM_PROMPT
+import re
 
 load_dotenv(override=True)
 
@@ -22,7 +23,7 @@ model = "claude-3-5-sonnet-20241022"
 # model = "fireworks_ai/accounts/fireworks/models/qwen2p5-coder-32b-instruct"
 
 gen_kwargs = {
-    "temperature": 0.2,
+    "temperature": 0,
     "max_tokens": 500
 }
 
@@ -47,10 +48,32 @@ def extract_tag_content(text: str, tag_name: str) -> str | None:
     match = re.search(pattern, text, re.DOTALL)
     return match.group(1) if match else None
 
-def remove_thought_process(text: str) -> str:
-    """Remove everything between <thought_process> tags, including the tags"""
-    import re
-    return re.sub(r'<thought_process>.*?</thought_process>', '', text, flags=re.DOTALL).strip()
+def remove_thought_process(text: str, is_suppressing: bool) -> tuple[str, bool]:
+    # Check if we have an opening tag in this chunk
+    has_opening = "<thought_process>" in text
+    has_closing = "</thought_process>" in text
+    cleaned_text = text
+    
+    # If we're not dealing with any tags or not suppressing, return the text as is
+    if not has_opening and not has_closing and not is_suppressing:
+        return (text, False)
+    
+    # If we have an opening tag but no closing tag, we're suppressing the tags,return only before the opening tag   
+    if has_opening and not has_closing:
+        return (text.split("<thought_process>")[0], True)
+    
+    # if we have a closing tag, keep everything after it
+    if has_closing:
+        parts = text.split("</thought_process>")
+        return (parts[-1], False)  # Return everything after the last closing tag
+    
+    # If we're currently suppressing and no closing tag found
+    if is_suppressing:
+        return ("", True)
+        
+    # Default case
+    return (text, False)
+
 
 @traceable
 @cl.on_chat_start
@@ -78,7 +101,7 @@ async def on_message(message: cl.Message):
     # Extract function call if present
     assistant_message = response.choices[0].message
         
-    if function_call_text := extract_tag_content(assistant_message.content, "function"):
+    if function_call_text := extract_tag_content(assistant_message.content, "function_call"):
         # Parse the function call
         function_data = json.loads(function_call_text)
         
@@ -96,6 +119,8 @@ async def on_message(message: cl.Message):
                 "content": f"Function {function_data['name']} returned: {json.dumps(result)}"
             })
             
+        print("result", result)
+        
         # Second LLM call to process function results
         final_response = litellm.completion(
             model=model,
@@ -105,16 +130,16 @@ async def on_message(message: cl.Message):
         )
         
         # Stream the final response
+        is_suppressing = False
         for part in final_response:
-            chunk_type, content = part
-            if content:
-                cleaned_content = remove_thought_process(content)
+            if part.choices[0].delta.content:
+                cleaned_content, is_suppressing = remove_thought_process(part.choices[0].delta.content, is_suppressing)
                 if cleaned_content:  # Only send if there's content after removing tags
                     await response_message.stream_token(cleaned_content)
     else:
         print("assistant_message.content", assistant_message.content)
         # Clean the original response of thought process tags
-        cleaned_response = remove_thought_process(assistant_message.content)
+        cleaned_response, _ = remove_thought_process(assistant_message.content, False)
         await response_message.stream_token(cleaned_response)
     
     await response_message.update()
