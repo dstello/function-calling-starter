@@ -3,6 +3,7 @@ import requests
 from serpapi import GoogleSearch
 from functools import wraps
 from typing import Dict, Any, Callable
+from datetime import datetime 
 
 # Global cache dictionary
 # Structure: {
@@ -33,6 +34,37 @@ def memoize_api_call():
             return result
         return wrapper
     return decorator
+
+@memoize_api_call()
+def get_current_date():
+    # format date to Day, Month Day, Year
+    return datetime.now().strftime("%A, %B %d, %Y")
+
+@memoize_api_call()
+def get_location_by_ip(ip: str = None) -> str:
+    """
+    Get approximate location (city, state) using IP address.
+    If no IP is provided, gets location for the current machine's public IP.
+    Returns location string in format "City, State" or "Location unavailable" on error.
+    """
+    try:
+        # If no IP provided, this will get location based on the requester's IP
+        url = f"https://ipapi.co/{ip}/json/" if ip else "https://ipapi.co/json/"
+        response = requests.get(url, timeout=5)
+        
+        if response.status_code == 200:
+            data = response.json()
+            city = data.get('city', '')
+            region = data.get('region', '')
+            
+            if city and region:
+                return f"{city}, {region}"
+            return "Location unavailable"
+            
+        return "Location unavailable"
+    except Exception as e:
+        print(f"Error getting location: {str(e)}")
+        return "Location unavailable"
 
 @memoize_api_call()
 def get_now_playing_movies():
@@ -79,6 +111,7 @@ def get_showtimes(title, location):
         "hl": "en"
     }
 
+    print("params", params)
     search = GoogleSearch(params)
     results = search.get_dict()
 

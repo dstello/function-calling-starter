@@ -1,7 +1,7 @@
 import json
 from dotenv import load_dotenv
 import chainlit as cl
-from movie_functions import get_now_playing_movies, get_showtimes
+from movie_functions import get_now_playing_movies, get_showtimes, get_current_date, get_location_by_ip
 import litellm
 from prompts import SYSTEM_PROMPT
 import re
@@ -111,7 +111,12 @@ async def on_message(message: cl.Message):
             result = get_now_playing_movies()
         elif function_data["name"] == "get_showtimes":
             result = get_showtimes(**function_data.get("arguments", {}))
+        elif function_data["name"] == "get_current_date":
+            result = get_current_date()
+        elif function_data["name"] == "get_location_by_ip":
+            result = get_location_by_ip()
             
+        print("result", result)
         # Add function result to message history
         if result:
             message_history.append({
@@ -119,8 +124,6 @@ async def on_message(message: cl.Message):
                 "content": f"Function {function_data['name']} returned: {json.dumps(result)}"
             })
             
-        print("result", result)
-        
         # Second LLM call to process function results
         final_response = litellm.completion(
             model=model,
@@ -133,13 +136,15 @@ async def on_message(message: cl.Message):
         is_suppressing = False
         for part in final_response:
             if part.choices[0].delta.content:
-                cleaned_content, is_suppressing = remove_thought_process(part.choices[0].delta.content, is_suppressing)
+                # cleaned_content, is_suppressing = remove_thought_process(part.choices[0].delta.content, is_suppressing)
+                cleaned_content = part.choices[0].delta.content
                 if cleaned_content:  # Only send if there's content after removing tags
                     await response_message.stream_token(cleaned_content)
     else:
         print("assistant_message.content", assistant_message.content)
         # Clean the original response of thought process tags
-        cleaned_response, _ = remove_thought_process(assistant_message.content, False)
+        # cleaned_response, _ = remove_thought_process(assistant_message.content, False)
+        cleaned_response = assistant_message.content
         await response_message.stream_token(cleaned_response)
     
     await response_message.update()
