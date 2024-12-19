@@ -6,6 +6,7 @@ import litellm
 from prompts import SYSTEM_PROMPT
 import re
 import random
+from typing import Dict
 
 load_dotenv(override=True)
 
@@ -27,6 +28,8 @@ gen_kwargs = {
     "temperature": 0,
     "max_tokens": 500
 }
+
+PENDING_PURCHASES: Dict[str, dict] = {}
 
 def extract_tag_content(text: str, tag_name: str) -> str | None:
     """
@@ -81,6 +84,7 @@ def remove_thought_process(text: str, is_suppressing: bool) -> tuple[str, bool]:
 def on_chat_start():    
     message_history = [{"role": "system", "content": SYSTEM_PROMPT}]
     cl.user_session.set("message_history", message_history)
+    cl.user_session.set("pending_purchase", None)
 
 @cl.on_message
 @traceable
@@ -124,8 +128,33 @@ async def on_message(message: cl.Message):
                     if movies:
                         result = {"selected_movie": random.choice(movies)}
                 case "buy_ticket":
-                    # Confirm with the user that they want to buy a ticket 
-                    result = buy_ticket(**function_data.get("arguments", {}))
+                    # Store the purchase details for confirmation
+                    purchase_details = function_data.get("arguments", {})
+                    cl.user_session.set("pending_purchase", purchase_details)
+                    
+                    # Create confirmation message
+                    confirmation_msg = (
+                        f"Please confirm your ticket purchase:\n\n"
+                        f"Movie: {purchase_details.get('movie_title')}\n"
+                        f"Theater: {purchase_details.get('theater')}\n"
+                        f"Time: {purchase_details.get('showtime')}\n\n"
+                        f"Would you like to proceed with the purchase? (Yes/No)"
+                    )
+                    
+                    # Add the confirmation request to the message history
+                    message_history.append({
+                        "role": "assistant",
+                        "content": confirmation_msg
+                    })
+                    await response_message.stream_token(confirmation_msg)
+                    break  # Exit the loop to wait for user confirmation
+                case "confirm_ticket_purchase":
+                    # double check previous message history for confirmation
+                    confirmation_msg = message_history[-1]["content"]
+                    if "yes" in confirmation_msg.lower():
+                        result = buy_ticket(**function_data.get("arguments", {}))
+                    else:
+                        result = "Purchase cancelled by user."
                 
             print("result", result)
             

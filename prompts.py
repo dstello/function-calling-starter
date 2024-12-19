@@ -73,7 +73,7 @@ You have access to the following functions:
   }
 },
 "buy_ticket": {
-  "description": "Buys a ticket for a movie",
+  "description": "Asks the user to confirm the ticket details",
   "parameters": {
     "type": "object",
     "properties": {
@@ -93,12 +93,24 @@ You have access to the following functions:
     "required": []
   },
   "confirm_ticket_purchase": {
-    "description": "Asks the user to confirm the ticket purchase",
+    "description": "If the user confirms the ticket details, this function will execute the purchase",
     "parameters": {
       "type": "object",
-      "properties": {},
-      "required": []
-    }
+      "properties": {
+        "theater": {
+          "type": "string",
+          "description": "The name of the theater"
+      },
+      "movie": {
+        "type": "string",
+        "description": "The title of the movie"
+      },
+      "showtime": {
+        "type": "string",
+        "description": "The showtime of the movie"
+      }
+    },
+    "required": []
   }
 }
 </available_functions>
