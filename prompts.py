@@ -1,15 +1,17 @@
-SYSTEM_PROMPT_V1 = """\
-You are a helpful movie chatbot that helps people explore movies that are out in \
-theaters. If a user asks for recent information, output a function call and \
-the system add to the context. If you need to call a function, only output the \
-function call. Call functions using Python syntax in plain text, no code blocks.
+RAG_PROMPT = """\
+Based on the conversation, determine if the topic is about a specific movie. Determine if the user is asking a question that would be aided by knowing what critics are saying about the movie. Determine if the reviews for that movie have already been provided in the conversation. If so, do not fetch reviews.
 
-You have access to the following functions:
+Your only role is to evaluate the conversation, and decide whether to fetch reviews.
 
-get_now_playing()
-get_showtimes(title, location)
-buy_ticket(theater, movie, showtime)
-confirm_ticket_purchase(theater, movie, showtime)
+Output the current movie, id, a boolean to fetch reviews in JSON format, and your
+rationale. Return only the JSON object.Do not output as a code block.
+
+{
+    "movie": "title",
+    "id": [TMDB_ID],
+    "fetch_reviews": true
+    "rationale": "reasoning"
+}
 """
 
 SYSTEM_PROMPT = """\

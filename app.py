@@ -1,9 +1,9 @@
 import json
 from dotenv import load_dotenv
 import chainlit as cl
-from movie_functions import get_now_playing_movies, get_showtimes, get_current_datetime, get_location_by_ip, buy_ticket
+from movie_functions import get_now_playing_movies, get_showtimes, get_current_datetime, get_location_by_ip, buy_ticket, get_reviews
 import litellm
-from prompts import SYSTEM_PROMPT
+from prompts import SYSTEM_PROMPT, RAG_PROMPT
 import re
 import random
 from typing import Dict
@@ -20,6 +20,7 @@ litellm.success_callback = ["langsmith"]
 
 # Anthropic Claude
 model = "claude-3-5-sonnet-20241022"
+smol_model = "claude-3-5-haiku-20241022"
 
 # Fireworks Qwen
 # model = "fireworks_ai/accounts/fireworks/models/qwen2p5-coder-32b-instruct"
@@ -95,8 +96,28 @@ async def on_message(message: cl.Message):
     response_message = cl.Message(content="")
     await response_message.send()
 
-    is_suppressing = False  # Initialize suppression state
+    # Evaluation for fetching movie reviews
+    # TODO: We don't know the TMDB ID of the movie yet, so we need to fetch it first
+    stripped_message_history = [msg for msg in message_history if msg["role"] != "system"]
+    review_evaluation_response = litellm.completion(
+        model=smol_model,
+        messages=stripped_message_history + [{"role": "system", "content": RAG_PROMPT}],
+        stream=False,
+        **gen_kwargs
+    )
+    
+    review_context = review_evaluation_response.choices[0].message.content
+    print("Review Evaluation Result:", review_context)
+    review_context = json.loads(review_context)
+    if review_context.get("fetch_reviews", False):
+      movie_id = review_context.get("id")
+      reviews = get_reviews(movie_id)
+      reviews = f"Reviews for {review_context.get('movie')} (ID: {movie_id}):\n\n{reviews}"
+      context_message = {"role": "user", "content": f"Function call return for get_reviews: {reviews}"}
+      message_history.append(context_message)
 
+    is_suppressing = False  # Initialize suppression state
+    
     while True:
         response = litellm.completion(
             model=model,
