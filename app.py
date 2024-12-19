@@ -5,6 +5,7 @@ from movie_functions import get_now_playing_movies, get_showtimes, get_current_d
 import litellm
 from prompts import SYSTEM_PROMPT
 import re
+import random
 
 load_dotenv(override=True)
 
@@ -90,63 +91,55 @@ async def on_message(message: cl.Message):
     response_message = cl.Message(content="")
     await response_message.send()
 
-    # First LLM call to get function call
-    response = litellm.completion(
-        model=model,
-        messages=message_history,
-        stream=False,  # Changed to False for function calling
-        **gen_kwargs
-    )
-    
-    # Extract function call if present
-    assistant_message = response.choices[0].message
-        
-    if function_call_text := extract_tag_content(assistant_message.content, "function_call"):
-        # Parse the function call
-        function_data = json.loads(function_call_text)
-        
-        # Execute the function based on the name
-        result = None
-        if function_data["name"] == "get_now_playing":
-            result = get_now_playing_movies()
-        elif function_data["name"] == "get_showtimes":
-            result = get_showtimes(**function_data.get("arguments", {}))
-        elif function_data["name"] == "get_current_date":
-            result = get_current_date()
-        elif function_data["name"] == "get_location_by_ip":
-            result = get_location_by_ip()
-            
-        print("result", result)
-        # Add function result to message history
-        if result:
-            message_history.append({
-                "role": "user",
-                "content": f"Function {function_data['name']} returned: {json.dumps(result)}"
-            })
-            
-        # Second LLM call to process function results
-        final_response = litellm.completion(
+    is_suppressing = False  # Initialize suppression state
+
+    while True:
+        response = litellm.completion(
             model=model,
             messages=message_history,
-            stream=True,
+            stream=False,  # Changed to False for function calling
             **gen_kwargs
         )
         
-        # Stream the final response
-        is_suppressing = False
-        for part in final_response:
-            if part.choices[0].delta.content:
-                # cleaned_content, is_suppressing = remove_thought_process(part.choices[0].delta.content, is_suppressing)
-                cleaned_content = part.choices[0].delta.content
-                if cleaned_content:  # Only send if there's content after removing tags
-                    await response_message.stream_token(cleaned_content)
-    else:
-        print("assistant_message.content", assistant_message.content)
-        # Clean the original response of thought process tags
-        # cleaned_response, _ = remove_thought_process(assistant_message.content, False)
-        cleaned_response = assistant_message.content
-        await response_message.stream_token(cleaned_response)
-    
+        assistant_message = response.choices[0].message
+        
+        if function_call_text := extract_tag_content(assistant_message.content, "function_call"):
+            # Parse the function call
+            function_data = json.loads(function_call_text)
+            
+            # Execute the function based on the name
+            result = None
+            if function_data["name"] == "get_now_playing":
+                result = get_now_playing_movies()
+            elif function_data["name"] == "get_showtimes":
+                result = get_showtimes(**function_data.get("arguments", {}))
+            elif function_data["name"] == "get_current_date":
+                result = get_current_date()
+            elif function_data["name"] == "get_location_by_ip":
+                result = get_location_by_ip()
+            elif function_data["name"] == "pick_random_movie":
+                movies = get_now_playing_movies()
+                if movies:
+                    result = {"selected_movie": random.choice(movies)}
+            # Add more function handlers as needed
+                
+            print("result", result)
+            
+            # Add function result to message history
+            if result:
+                message_history.append({
+                    "role": "user",
+                    "content": f"Function {function_data['name']} returned: {json.dumps(result)}"
+                })
+                
+            # Update the session with the new history
+            cl.user_session.set("message_history", message_history)
+        else:
+            # No more function calls, process the final response
+            cleaned_response = assistant_message.content
+            await response_message.stream_token(cleaned_response)
+            break  # Exit the loop as there are no more function calls
+
     await response_message.update()
     message_history.append({"role": "assistant", "content": response_message.content})
     cl.user_session.set("message_history", message_history)

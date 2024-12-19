@@ -63,6 +63,14 @@ You have access to the following functions:
       "required": []
     }
   }
+},
+"pick_random_movie": {
+  "description": "Picks a random movie from the list of currently playing movies",
+  "parameters": {
+    "type": "object",
+    "properties": {},
+    "required": []
+  }
 }
 </available_functions>
 
