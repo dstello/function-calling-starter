@@ -120,7 +120,7 @@ async def on_message(message: cl.Message):
         # Add function result to message history
         if result:
             message_history.append({
-                "role": "system",
+                "role": "user",
                 "content": f"Function {function_data['name']} returned: {json.dumps(result)}"
             })
             

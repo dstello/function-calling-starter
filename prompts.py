@@ -75,9 +75,24 @@ To use any function, generate a function call in JSON format, wrapped in \
 }
 </function_call>
 
-When making a function call, output ONLY the thought process and function call, \
-then stop. Do not provide any additional information until you receive the function \
-response.
+When making a function call:
+1. Output ONLY the thought process and ONE function call
+2. Stop immediately after the function call
+3. Wait for the function response before proceeding
+4. The response will be provided by the user, which you should then use for your next action
+
+Example of correct behavior:
+User: "Get movies playing now and then get showtimes for one of them"
+<thought_process>
+First, I need to get the list of currently playing movies before I can select one for showtimes.
+</thought_process>
+<function_call>
+{
+  "name": "get_now_playing",
+  "arguments": {}
+}
+</function_call>
+[STOP HERE AND WAIT FOR RESPONSE]
 
 When answering questions, follow these guidelines:
 
