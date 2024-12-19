@@ -36,9 +36,9 @@ def memoize_api_call():
     return decorator
 
 @memoize_api_call()
-def get_current_date():
-    # format date to Day, Month Day, Year
-    return datetime.now().strftime("%A, %B %d, %Y")
+def get_current_datetime():
+    # format date to Day, Month Day, Year, Hour:Minute:Second
+    return datetime.now().strftime("%A, %B %d, %Y %H:%M:%S")
 
 @memoize_api_call()
 def get_location_by_ip(ip: str = None) -> str:

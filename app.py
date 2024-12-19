@@ -1,7 +1,7 @@
 import json
 from dotenv import load_dotenv
 import chainlit as cl
-from movie_functions import get_now_playing_movies, get_showtimes, get_current_date, get_location_by_ip
+from movie_functions import get_now_playing_movies, get_showtimes, get_current_datetime, get_location_by_ip, buy_ticket
 import litellm
 from prompts import SYSTEM_PROMPT
 import re
@@ -106,22 +106,26 @@ async def on_message(message: cl.Message):
         if function_call_text := extract_tag_content(assistant_message.content, "function_call"):
             # Parse the function call
             function_data = json.loads(function_call_text)
+            function_name = function_data["name"]
             
             # Execute the function based on the name
             result = None
-            if function_data["name"] == "get_now_playing":
-                result = get_now_playing_movies()
-            elif function_data["name"] == "get_showtimes":
-                result = get_showtimes(**function_data.get("arguments", {}))
-            elif function_data["name"] == "get_current_date":
-                result = get_current_date()
-            elif function_data["name"] == "get_location_by_ip":
-                result = get_location_by_ip()
-            elif function_data["name"] == "pick_random_movie":
-                movies = get_now_playing_movies()
-                if movies:
-                    result = {"selected_movie": random.choice(movies)}
-            # Add more function handlers as needed
+            match function_name:
+                case "get_now_playing":
+                    result = get_now_playing_movies()
+                case "get_showtimes":
+                    result = get_showtimes(**function_data.get("arguments", {}))
+                case "get_current_datetime":
+                    result = get_current_datetime()
+                case "get_location_by_ip":
+                    result = get_location_by_ip()
+                case "pick_random_movie":
+                    movies = get_now_playing_movies()
+                    if movies:
+                        result = {"selected_movie": random.choice(movies)}
+                case "buy_ticket":
+                    # Confirm with the user that they want to buy a ticket 
+                    result = buy_ticket(**function_data.get("arguments", {}))
                 
             print("result", result)
             
