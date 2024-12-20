@@ -12,6 +12,7 @@ load_dotenv(override=True)
 
 from langsmith import traceable
 litellm.success_callback = ["langsmith"] 
+litellm.set_verbose=True
 
 # Choose one of these model configurations by uncommenting it:
 
@@ -92,102 +93,90 @@ def on_chat_start():
 @cl.on_message
 @traceable
 async def on_message(message: cl.Message):
-    message_history = cl.user_session.get("message_history", [])
-    message_history.append({"role": "user", "content": message.content})
-    
-    response_message = cl.Message(content="")
-    await response_message.send()
+    try:
+        message_history = cl.user_session.get("message_history", [])
+        message_history.append({"role": "user", "content": message.content})
+        
+        response_message = cl.Message(content="")
+        await response_message.send()
 
-    context_message = get_review_context(message_history)
-    if context_message:
-      message_history.append(context_message)
+        context_message = get_review_context(message_history)
+        if context_message:
+            print("Update with review context:", context_message)
+            message_history.append(context_message)
 
-    is_suppressing = False  # Initialize suppression state
-    
-    while True:
         response = litellm.completion(
             model=model,
             messages=message_history,
             tools=tools,
-            stream=False,  # Changed to False for function calling
+            stream=False,
             **gen_kwargs,
         )
         
         assistant_message = response.choices[0].message
-        
-        tool_calls = response.choices[0].message.tool_calls
-        print("tool_calls", tool_calls)
-        if tool_calls:
-            
-            # Parse the function call
-            function_data = json.loads(function_call_text)
-            function_name = function_data["name"]
-            
-            # Execute the function based on the name
-            result = None
-            match function_name:
-                case "get_now_playing":
-                    result = get_now_playing_movies()
-                case "get_showtimes":
-                    result = get_showtimes(**function_data.get("arguments", {}))
-                case "get_current_datetime":
-                    result = get_current_datetime()
-                case "get_location_by_ip":
-                    result = get_location_by_ip()
-                case "pick_random_movie":
-                    movies = get_now_playing_movies()
-                    if movies:
-                        result = {"selected_movie": random.choice(movies)}
-                case "buy_ticket":
-                    # Store the purchase details for confirmation
-                    purchase_details = function_data.get("arguments", {})
-                    cl.user_session.set("pending_purchase", purchase_details)
-                    
-                    # Create confirmation message
-                    confirmation_msg = (
-                        f"Please confirm your ticket purchase:\n\n"
-                        f"Movie: {purchase_details.get('movie_title')}\n"
-                        f"Theater: {purchase_details.get('theater')}\n"
-                        f"Time: {purchase_details.get('showtime')}\n\n"
-                        f"Would you like to proceed with the purchase? (Yes/No)"
-                    )
-                    
-                    # Add the confirmation request to the message history
-                    message_history.append({
-                        "role": "assistant",
-                        "content": confirmation_msg
-                    })
-                    await response_message.stream_token(confirmation_msg)
-                    break  # Exit the loop to wait for user confirmation
-                case "confirm_ticket_purchase":
-                    # double check previous message history for confirmation
-                    confirmation_msg = message_history[-1]["content"]
-                    if "yes" in confirmation_msg.lower():
-                        result = buy_ticket(**function_data.get("arguments", {}))
-                    else:
-                        result = "Purchase cancelled by user."
-                
-            print("result", result)
-            
-            # Add function result to message history
-            if result:
-                message_history.append({
-                    "role": "user",
-                    "content": f"Function {function_data['name']} returned: {json.dumps(result)}"
-                })
-                
-            # Update the session with the new history
-            cl.user_session.set("message_history", message_history)
-        else:
-            # No more function calls, process the final response
-            cleaned_response = assistant_message.content
-            await response_message.stream_token(cleaned_response)
-            break  # Exit the loop as there are no more function calls
+        tool_calls = getattr(assistant_message, 'tool_calls', None)
+        print("Received tool calls:", tool_calls)
 
-    await response_message.update()
-    message_history.append({"role": "assistant", "content": response_message.content})
-    cl.user_session.set("message_history", message_history)
-    
+        if tool_calls:
+            available_functions = {
+                "get_now_playing": get_now_playing_movies,
+                "get_showtimes": get_showtimes,
+                "get_current_datetime": get_current_datetime,
+                "get_location_by_ip": get_location_by_ip,
+                "pick_random_movie": lambda: {"selected_movie": random.choice(get_now_playing_movies()["now_playing_movies"])},
+                "buy_ticket": buy_ticket,
+                "get_reviews": get_reviews,
+            }
+            
+            message_history.append(assistant_message)
+
+            for tool_call in tool_calls:
+                print("Handling tool call:", tool_call)
+                function_name = tool_call.function.name
+                function_to_call = available_functions.get(function_name)
+
+                if function_to_call:
+                    function_args = json.loads(tool_call.function.arguments)
+                    print(f"Calling function '{function_name}' with arguments:", function_args)
+                    result = function_to_call(**function_args)
+                    print(f"Function '{function_name}' returned:", result)
+                    
+                    message_history.append({
+                        "role": "tool",
+                        "name": function_name,
+                        "content": result,
+                        "tool_call_id": tool_call.id 
+                    })
+                    
+            second_response = litellm.completion(
+                model=model,
+                messages=message_history,
+                tools=tools,
+                stream=False,
+                **gen_kwargs,
+            )
+
+            second_response_content = second_response.choices[0].message.content
+            if second_response_content is not None:
+                await response_message.stream_token(second_response_content)
+            else:
+                print("Warning: Second response content is None")
+
+        else:
+            cleaned_response = assistant_message.content
+            print("Assistant response:", cleaned_response)
+            await response_message.stream_token(cleaned_response)
+
+        await response_message.update()
+        message_history.append({"role": "assistant", "content": response_message.content})
+        cl.user_session.set("message_history", message_history)
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"An error occurred in on_message: {e}")
+        await cl.Message(content="An error occurred while processing your request.").send()
+
 def get_review_context(message_history: list[dict]):
     # Evaluation for fetching movie reviews
     stripped_message_history = [msg for msg in message_history if msg["role"] != "system"]
