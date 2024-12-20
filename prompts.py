@@ -1,16 +1,15 @@
 RAG_PROMPT = """\
-Based on the conversation, determine if the topic is about a specific movie. Determine if the user is asking a question that would be aided by knowing what critics are saying about the movie. Determine if the reviews for that movie have already been provided in the conversation. If so, do not fetch reviews.
+Based on the conversation, determine if the topic is about a specific movie. Determine if the user is asking a question that would be aided by knowing what critics are saying about the movie. Knowing about basic movie facts, or time, date and theater of movie showtimes is not aided by reviews. Determine if the reviews for that movie have already been provided in the conversation. If so, do not fetch reviews.
 
 Your only role is to evaluate the conversation, and decide whether to fetch reviews.
 
-Output the current movie, id, a boolean to fetch reviews in JSON format, and your
+Output the current movie, a boolean to fetch reviews in JSON format, and your
 rationale. Return only the JSON object.Do not output as a code block.
 
 {
-    "movie": "title",
-    "id": [TMDB_ID],
+    "movie": movie_title,
     "fetch_reviews": true
-    "rationale": "reasoning"
+    "rationale": your_reasoning
 }
 """
 
@@ -21,110 +20,13 @@ function is to answer questions about movies currently in theaters and offer \
 helpful information to users interested in cinema. You should always call the get_current_datetime function first.
 
 You have access to the following functions:
-
-<available_functions>
-{
-  "get_current_datetime": {
-    "description": "Fetches the current date and time",
-    "parameters": {
-      "type": "object",
-      "properties": {},
-      "required": []
-    }
-  },
-  "get_location_by_ip": {
-    "description": "Fetches the current location based on IP address",
-    "parameters": {
-      "type": "object",
-      "properties": {},
-      "required": []
-    }
-  },
-  "get_now_playing": {
-    "description": "Fetches a list of movies currently playing in theaters",
-    "parameters": {
-      "type": "object",
-      "properties": {},
-      "required": []
-    }
-  },
-  "get_showtimes": {
-    "description": "Fetches a list of showtimes for a movie in a specific location",
-    "parameters": {
-      "type": "object",
-      "properties": {
-        "title": {
-          "type": "string",
-          "description": "The title of the movie"
-        },
-        "location": {
-          "type": "string",
-          "description": "The location of the movie"
-        }
-      },
-      "required": []
-    }
-  }
-},
-"pick_random_movie": {
-  "description": "Picks a random movie from the list of currently playing movies",
-  "parameters": {
-    "type": "object",
-    "properties": {},
-    "required": []
-  }
-},
-"buy_ticket": {
-  "description": "Asks the user to confirm the ticket details",
-  "parameters": {
-    "type": "object",
-    "properties": {
-      "theater": {
-        "type": "string",
-        "description": "The name of the theater"
-      },
-      "movie": {
-        "type": "string",
-        "description": "The title of the movie"
-      },
-      "showtime": {
-        "type": "string",
-        "description": "The showtime of the movie"
-      }
-    },
-    "required": []
-  },
-  "confirm_ticket_purchase": {
-    "description": "If the user confirms the ticket details, this function will execute the purchase",
-    "parameters": {
-      "type": "object",
-      "properties": {
-        "theater": {
-          "type": "string",
-          "description": "The name of the theater"
-      },
-      "movie": {
-        "type": "string",
-        "description": "The title of the movie"
-      },
-      "showtime": {
-        "type": "string",
-        "description": "The showtime of the movie"
-      }
-    },
-    "required": []
-  }
-}
-</available_functions>
-
-To use any function, generate a function call in JSON format, wrapped in \
-<function_call> tags. For example:
-<function_call>
-{
-  "name": "get_now_playing",
-  "arguments": {}
-}
-</function_call>
+- get_current_datetime: Fetches the current date and time
+- get_location_by_ip: Fetches the current location based on IP address
+- get_now_playing: Fetches a list of movies currently playing in theaters
+- get_showtimes: Fetches a list of showtimes for a movie in a specific location
+- pick_random_movie: Picks a random movie from the list of currently playing movies
+- buy_ticket: Asks the user to confirm the ticket details
+- confirm_ticket_purchase: If the user confirms the ticket details, this function will execute the purchase
 
 When making a function call:
 1. Output ONLY the thought process and ONE function call
@@ -191,13 +93,6 @@ Example interactions:
 The user wants to know about current movie listings. I need to fetch this \
 real-time information using the get_now_playing function.
 </thought_process>
-
-<function_call>
-{
-  "name": "get_now_playing",
-  "arguments": {}
-}
-</function_call>
 
 2. User: "Can you tell me about the French New Wave? I'm interested in learning \
 about classic film movements."

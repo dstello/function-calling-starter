@@ -7,7 +7,7 @@ from prompts import SYSTEM_PROMPT, RAG_PROMPT
 import re
 import random
 from typing import Dict
-
+from tools import tools
 load_dotenv(override=True)
 
 from langsmith import traceable
@@ -16,11 +16,12 @@ litellm.success_callback = ["langsmith"]
 # Choose one of these model configurations by uncommenting it:
 
 # OpenAI GPT-4
-# model = "openai/gpt-4o"
+model = "gpt-4o"
+smol_model = "gpt-4o-mini"
 
 # Anthropic Claude
-model = "claude-3-5-sonnet-20241022"
-smol_model = "claude-3-5-haiku-20241022"
+# model = "claude-3-5-sonnet-20241022"
+# smol_model = "claude-3-5-haiku-20241022"
 
 # Fireworks Qwen
 # model = "fireworks_ai/accounts/fireworks/models/qwen2p5-coder-32b-instruct"
@@ -53,6 +54,7 @@ def extract_tag_content(text: str, tag_name: str) -> str | None:
     match = re.search(pattern, text, re.DOTALL)
     return match.group(1) if match else None
 
+# TODO: this is unused during development, but we should keep it for future use
 def remove_thought_process(text: str, is_suppressing: bool) -> tuple[str, bool]:
     # Check if we have an opening tag in this chunk
     has_opening = "<thought_process>" in text
@@ -96,24 +98,8 @@ async def on_message(message: cl.Message):
     response_message = cl.Message(content="")
     await response_message.send()
 
-    # Evaluation for fetching movie reviews
-    # TODO: We don't know the TMDB ID of the movie yet, so we need to fetch it first
-    stripped_message_history = [msg for msg in message_history if msg["role"] != "system"]
-    review_evaluation_response = litellm.completion(
-        model=smol_model,
-        messages=stripped_message_history + [{"role": "system", "content": RAG_PROMPT}],
-        stream=False,
-        **gen_kwargs
-    )
-    
-    review_context = review_evaluation_response.choices[0].message.content
-    print("Review Evaluation Result:", review_context)
-    review_context = json.loads(review_context)
-    if review_context.get("fetch_reviews", False):
-      movie_id = review_context.get("id")
-      reviews = get_reviews(movie_id)
-      reviews = f"Reviews for {review_context.get('movie')} (ID: {movie_id}):\n\n{reviews}"
-      context_message = {"role": "user", "content": f"Function call return for get_reviews: {reviews}"}
+    context_message = get_review_context(message_history)
+    if context_message:
       message_history.append(context_message)
 
     is_suppressing = False  # Initialize suppression state
@@ -122,13 +108,17 @@ async def on_message(message: cl.Message):
         response = litellm.completion(
             model=model,
             messages=message_history,
+            tools=tools,
             stream=False,  # Changed to False for function calling
-            **gen_kwargs
+            **gen_kwargs,
         )
         
         assistant_message = response.choices[0].message
         
-        if function_call_text := extract_tag_content(assistant_message.content, "function_call"):
+        tool_calls = response.choices[0].message.tool_calls
+        print("tool_calls", tool_calls)
+        if tool_calls:
+            
             # Parse the function call
             function_data = json.loads(function_call_text)
             function_name = function_data["name"]
@@ -197,6 +187,29 @@ async def on_message(message: cl.Message):
     await response_message.update()
     message_history.append({"role": "assistant", "content": response_message.content})
     cl.user_session.set("message_history", message_history)
+    
+def get_review_context(message_history: list[dict]):
+    # Evaluation for fetching movie reviews
+    stripped_message_history = [msg for msg in message_history if msg["role"] != "system"]
+    review_evaluation_response = litellm.completion(
+        model=smol_model,
+        messages=stripped_message_history + [{"role": "system", "content": RAG_PROMPT}],
+        stream=False,
+        **gen_kwargs
+    )
+    
+    review_context = review_evaluation_response.choices[0].message.content
+    review_context = json.loads(review_context)
+    print("Review Evaluation Result:", review_context)
+    
+    if review_context.get("fetch_reviews", False):
+      reviews = get_reviews(review_context.get("movie"))
+      reviews = f"Reviews for {review_context.get('movie')}:\n\n{reviews}"
+      context_message = {"role": "user", "content": f"Function call return for get_reviews: {reviews}"}
+    else:
+      context_message = None
+    
+    return context_message
     
 if __name__ == "__main__":
     cl.main()

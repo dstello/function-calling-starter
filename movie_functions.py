@@ -141,13 +141,24 @@ def buy_ticket(theater, movie, showtime):
     return f"Ticket purchased for {movie} at {theater} for {showtime}."
 
 @memoize_api_call()
-def get_reviews(movie_id):
-    url = f"https://api.themoviedb.org/3/movie/{movie_id}/reviews?language=en-US&page=1"
+def get_reviews(movie_title):
+    # Get the movie ID from the title
+    id_url = f"https://api.themoviedb.org/3/search/movie?query={movie_title}&include_adult=false&language=en-US&page=1"
     headers = {
         "accept": "application/json",
         "Authorization": f"Bearer {os.getenv('TMDB_API_ACCESS_TOKEN')}"
     }
-    response = requests.get(url, headers=headers)
+
+    id_response = requests.get(id_url, headers=headers)
+    id_data = id_response.json()
+    movie_id = id_data.get('results', [{}])[0].get('id', 'N/A')
+    
+    if not movie_id:
+        return "No movie ID found for the given title."
+    
+    review_url = f"https://api.themoviedb.org/3/movie/{movie_id}/reviews?language=en-US&page=1"
+
+    response = requests.get(review_url, headers=headers)
     reviews_data = response.json()
 
     if 'results' not in reviews_data or not reviews_data['results']:
